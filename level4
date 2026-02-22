@@ -1,0 +1,340 @@
+-- =============================================
+-- COMBINED FIREBALL + HIT – SINGLE BUTTON TOGGLE
+-- Draggable + Minimizable + Mobile-Friendly + Teleport to Dummy on Start
+-- =============================================
+
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+-- Fireball Remote
+local fireballRemote = ReplicatedStorage:WaitForChild("SkillsInRS"):WaitForChild("RemoteEvent")
+
+-- Hit Remote (with fallback)
+local hitRemote = ReplicatedStorage:FindFirstChild("jdskhfsIIIllliiIIIdchgdIiIIIlIlIli")
+if not hitRemote then
+    for _, obj in ipairs(ReplicatedStorage:GetChildren()) do
+        if obj:IsA("RemoteEvent") and #obj.Name > 20 and (obj.Name:match("I") or obj.Name:match("l") or obj.Name:match("d")) then
+            hitRemote = obj
+            break
+        end
+    end
+end
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CombinedAuto"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 300, 0, 440)  -- slightly wider/taller for touch
+mainFrame.Position = UDim2.new(0.5, -150, 0.5, -220)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = ScreenGui
+
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -50, 1, 0)
+title.BackgroundTransparency = 1
+title.Text = "🔥 FIREBALL + HIT AUTO"
+title.TextColor3 = Color3.new(1,1,1)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Center
+title.Parent = titleBar
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 40, 0, 40)
+minimizeBtn.Position = UDim2.new(1, -45, 0, 0)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+minimizeBtn.Text = "−"
+minimizeBtn.TextColor3 = Color3.new(1,1,1)
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 24
+minimizeBtn.Active = true
+minimizeBtn.Parent = titleBar
+
+-- Content
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, 0, 1, -40)
+content.Position = UDim2.new(0, 0, 0, 40)
+content.BackgroundTransparency = 1
+content.Parent = mainFrame
+
+local statsFireball = Instance.new("TextLabel")
+statsFireball.Size = UDim2.new(1, -20, 0, 40)
+statsFireball.Position = UDim2.new(0, 10, 0, 10)
+statsFireball.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+statsFireball.TextColor3 = Color3.fromRGB(255, 165, 0)
+statsFireball.TextScaled = true
+statsFireball.Font = Enum.Font.GothamSemibold
+statsFireball.Text = "Fireballs: 0 | Est: 1317 ms | Rate: 0.76 hps"
+statsFireball.Parent = content
+
+local statsHit = Instance.new("TextLabel")
+statsHit.Size = UDim2.new(1, -20, 0, 40)
+statsHit.Position = UDim2.new(0, 10, 0, 60)
+statsHit.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+statsHit.TextColor3 = Color3.fromRGB(100, 255, 100)
+statsHit.TextScaled = true
+statsHit.Font = Enum.Font.GothamSemibold
+statsHit.Text = "Hits: 0 | Est: 616 ms | Rate: 0.00 hps"
+statsHit.Parent = content
+
+local autoBtn = Instance.new("TextButton")
+autoBtn.Size = UDim2.new(1, -20, 0, 80)
+autoBtn.Position = UDim2.new(0, 10, 0, 110)
+autoBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 90)
+autoBtn.TextColor3 = Color3.new(1,1,1)
+autoBtn.TextScaled = true
+autoBtn.Font = Enum.Font.GothamBlack
+autoBtn.Text = "START BOTH AUTOS"
+autoBtn.Active = true
+autoBtn.Parent = content
+
+local destroyBtn = Instance.new("TextButton")
+destroyBtn.Size = UDim2.new(1, -20, 0, 60)
+destroyBtn.Position = UDim2.new(0, 10, 0, 200)
+destroyBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+destroyBtn.TextColor3 = Color3.new(1,1,1)
+destroyBtn.TextScaled = true
+destroyBtn.Font = Enum.Font.GothamBold
+destroyBtn.Text = "DESTROY GUI"
+destroyBtn.Active = true
+destroyBtn.Parent = content
+
+-- Dragging (mouse + touch)
+local dragging, dragInput, dragStart, startPos
+
+local function updateDrag(input)
+    local delta = input.Position - dragStart
+    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input == dragInput then
+        updateDrag(input)
+    end
+end)
+
+-- Minimize
+local minimized = false
+minimizeBtn.Activated:Connect(function()
+    minimized = not minimized
+    if minimized then
+        mainFrame.Size = UDim2.new(0, 300, 0, 40)
+        minimizeBtn.Text = "+"
+        content.Visible = false
+    else
+        mainFrame.Size = UDim2.new(0, 300, 0, 440)
+        minimizeBtn.Text = "−"
+        content.Visible = true
+    end
+end)
+
+-- Shared findDummy
+local function findDummy()
+    local map = Workspace:FindFirstChild("MAP")
+    if not map then return nil end
+    local folder = map:FindFirstChild("5k_dummies")
+    if not folder then return nil end
+    local prio = folder:FindFirstChild("Dummy2")
+    if prio and prio:FindFirstChild("Humanoid") and prio.Humanoid.Health > 0 and prio:FindFirstChild("HumanoidRootPart") then
+        return prio
+    end
+    for _, obj in ipairs(folder:GetChildren()) do
+        local hum = obj:FindFirstChild("Humanoid")
+        local hrp = obj:FindFirstChild("HumanoidRootPart")
+        if obj.Name:match("Dummy") and hum and hum.Health > 0 and hrp then
+            return obj
+        end
+    end
+    return nil
+end
+
+-- FIREBALL LOGIC
+local runningFireball = false
+local connFireball
+local currentDummyFire, currentHumanoidFire
+local lastDropTimeFire, lastDropHPFire = 0, math.huge
+local cooldownEstFire, hitCountFire = 1.317, 0
+local SAFETY_MS_FIRE, MIN_GAP_FIRE, OUTLIER_RESET_FIRE = 0.035, 1.260, 1.360
+
+local function updateStatsFire()
+    local rate = cooldownEstFire > 0 and (1 / cooldownEstFire) or 0
+    statsFireball.Text = string.format("Fireballs: %d | Est: %d ms | Rate: %.2f hps", hitCountFire, math.round(cooldownEstFire * 1000), rate)
+end
+
+-- HIT LOGIC
+local runningHit = false
+local connHit
+local currentDummyHit, currentHumanoidHit
+local lastDropTimeHit, lastDropHPHit = 0, math.huge
+local cooldownEstHit, hitCountHit = 0.616, 0
+local SAFETY_MS_HIT, MIN_GAP_HIT, OUTLIER_RESET_HIT = 0.012, 0.600, 0.650
+
+local function updateStatsHit()
+    local rate = cooldownEstHit > 0 and (1 / cooldownEstHit) or 0
+    statsHit.Text = string.format("Hits: %d | Est: %d ms | Rate: %.2f hps", hitCountHit, math.round(cooldownEstHit * 1000), rate)
+end
+
+-- TOGGLE FUNCTION (with teleport)
+local function toggleBoth()
+    local shouldRun = not (runningFireball or runningHit)
+    runningFireball = shouldRun
+    runningHit = shouldRun
+
+    if shouldRun then
+        autoBtn.Text = "STOP BOTH AUTOS"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+
+        -- Find dummy & teleport once on start
+        local dummy = findDummy()
+        if dummy and dummy:FindFirstChild("HumanoidRootPart") then
+            local targetPos = dummy.HumanoidRootPart.Position
+            HumanoidRootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))  -- slight Y offset to avoid sinking
+        end
+
+        -- Start Fireball
+        currentDummyFire = findDummy()
+        if currentDummyFire then
+            currentHumanoidFire = currentDummyFire.Humanoid
+            lastDropHPFire = currentHumanoidFire.Health
+            lastDropTimeFire = tick()
+            hitCountFire = 0
+        else
+            runningFireball = false
+        end
+
+        -- Start Hit
+        currentDummyHit = findDummy()
+        if currentDummyHit then
+            currentHumanoidHit = currentDummyHit.Humanoid
+            lastDropHPHit = currentHumanoidHit.Health
+            lastDropTimeHit = tick()
+            hitCountHit = 0
+        else
+            runningHit = false
+        end
+
+        -- Fireball Loop
+        if connFireball then connFireball:Disconnect() end
+        connFireball = RunService.Heartbeat:Connect(function()
+            if not runningFireball then return end
+            if not currentDummyFire or not currentDummyFire.Parent or currentHumanoidFire.Health <= 0 then
+                currentDummyFire = findDummy()
+                if not currentDummyFire then runningFireball = false return end
+                currentHumanoidFire = currentDummyFire.Humanoid
+                lastDropHPFire = currentHumanoidFire.Health
+                lastDropTimeFire = tick()
+                hitCountFire = 0
+                cooldownEstFire = 1.317
+            end
+            local now = tick()
+            local elapsed = now - lastDropTimeFire
+            if elapsed >= math.max(MIN_GAP_FIRE, cooldownEstFire - SAFETY_MS_FIRE) then
+                pcall(function()
+                    local hrp = currentDummyFire.HumanoidRootPart
+                    if hrp then fireballRemote:FireServer(hrp.Position, "NewFireball") end
+                end)
+                local hp = currentHumanoidFire.Health
+                if hp < lastDropHPFire then
+                    local actual = now - lastDropTimeFire
+                    hitCountFire += 1
+                    cooldownEstFire = cooldownEstFire * 0.88 + actual * 0.12
+                    if cooldownEstFire > OUTLIER_RESET_FIRE then
+                        cooldownEstFire = 1.317
+                    end
+                    lastDropHPFire = hp
+                    lastDropTimeFire = now
+                    updateStatsFire()
+                end
+            end
+        end)
+
+        -- Hit Loop
+        if connHit then connHit:Disconnect() end
+        connHit = RunService.Heartbeat:Connect(function()
+            if not runningHit then return end
+            if not currentDummyHit or not currentDummyHit.Parent or currentHumanoidHit.Health <= 0 then
+                currentDummyHit = findDummy()
+                if not currentDummyHit then runningHit = false return end
+                currentHumanoidHit = currentDummyHit.Humanoid
+                lastDropHPHit = currentHumanoidHit.Health
+                lastDropTimeHit = tick()
+                hitCountHit = 0
+                cooldownEstHit = 0.616
+            end
+            local now = tick()
+            local elapsed = now - lastDropTimeHit
+            if elapsed >= math.max(MIN_GAP_HIT, cooldownEstHit - SAFETY_MS_HIT) then
+                if hitRemote then hitRemote:FireServer(currentHumanoidHit, 1) end
+                local hp = currentHumanoidHit.Health
+                if hp < lastDropHPHit then
+                    local actual = now - lastDropTimeHit
+                    hitCountHit += 1
+                    cooldownEstHit = cooldownEstHit * 0.88 + actual * 0.12
+                    if cooldownEstHit > OUTLIER_RESET_HIT then
+                        cooldownEstHit = 0.616
+                    end
+                    lastDropHPHit = hp
+                    lastDropTimeHit = now
+                    updateStatsHit()
+                end
+            end
+        end)
+    else
+        autoBtn.Text = "START BOTH AUTOS"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 90)
+        runningFireball = false
+        runningHit = false
+        if connFireball then connFireball:Disconnect() end
+        if connHit then connHit:Disconnect() end
+    end
+end
+
+-- Use Activated for best mobile/PC compatibility
+autoBtn.Activated:Connect(toggleBoth)
+
+destroyBtn.Activated:Connect(function()
+    runningFireball = false
+    runningHit = false
+    if connFireball then connFireball:Disconnect() end
+    if connHit then connHit:Disconnect() end
+    ScreenGui:Destroy()
+end)
